@@ -13,10 +13,32 @@ def assert_idx_in_string(bstring: bytes, idx: int):
     if idx >= len(bstring):
         raise ValueError('String ended unexpectedly')
 
-def byte_to_digit(b: int):
+def byte_to_digit(b: int) -> int:
     if b < DIGITS_RANGE[0] or b > DIGITS_RANGE[1]:
         raise ValueError('bencode.byte_to_digit: Given byte is not an encoded digit')
     return b - DIGITS_RANGE[0]
+
+def digits_to_bytes(n: int) -> List[int]:
+    if n == 0:
+        return [DIGITS_RANGE[0]]
+
+    neg: bool = False
+    if n < 0:
+        neg = True
+        n *= -1
+
+    digit_bytes = []
+    while n > 0:
+        next_byte = (n % 10) + DIGITS_RANGE[0]
+        digit_bytes.append(next_byte)
+        n //= 10
+
+    if neg:
+        digit_bytes.append(NEG_DIGIT)
+
+    # TODO endianess?
+    digit_bytes.reverse()
+    return digit_bytes
 
 def parse_int(bstring: bytes, idx: int, terminal_char: int) -> Tuple[int, int]:
     assert_idx_in_string(bstring, idx)
@@ -112,6 +134,48 @@ def decode_any(bstring: bytes, idx: int) -> Tuple[Any, int]:
         return decode_dict(bstring, idx)
     else:
         return decode_string(bstring, idx)
+
+def encode_int(n: int) -> bytes:
+    return bytes([INT_DELIMITER] + digits_to_bytes(n) + [END_DELIMITER])
+
+def encode_string(s: str) -> bytes:
+    return bytes(digits_to_bytes(len(s)) + [STRING_SIZE_DELIMITER]) + s.encode('ascii')
+
+def encode_list(lst: List) -> bytes:
+    ret_tokens: bytearray = bytearray() 
+    ret_tokens.append(LIST_DELIMITER)
+
+    for item in lst:
+        ret_tokens.extend(encode(item))
+
+    ret_tokens.append(END_DELIMITER)
+    return bytes(ret_tokens)
+
+def encode_dict(d: Dict) -> bytes:
+    ret_tokens: bytearray = bytearray()
+    ret_tokens.append(DICT_DELIMITER)
+
+    for key, val in d.items():
+        if not isinstance(key, str):
+            raise TypeError('bencode.encode_dict: key must be a string')
+        ret_tokens.extend(encode_string(key))
+        ret_tokens.extend(encode(val))
+
+    ret_tokens.append(END_DELIMITER)
+    return bytes(ret_tokens)
+
+def encode(obj: Any) -> bytes:
+    """Encodes some Python object (int, str, list, dict) to a bencoded string"""
+    if isinstance(obj, int):
+        return encode_int(obj)
+    elif isinstance(obj, str):
+        return encode_string(obj)
+    elif isinstance(obj, list):
+        return encode_list(obj)
+    elif isinstance(obj, dict):
+        return encode_dict(obj)
+
+    raise TypeError('bencode.encode parameter must be one of (int, str, list dict)')
 
 def decode(bstring: bytes) -> Any:
     """Decodes a bencoded string into a Python object"""

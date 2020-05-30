@@ -7,10 +7,14 @@ def decode_torrent_file(filename: str) -> Dict:
     Returns a decoded bencode dict.
     """
 
+    metainfo: Dict = None
     with open(torrent_file, 'rb') as f:
         data = f.read()
-        data = bencode.decode(data)
-        print(data)
+        metainfo = bencode.decode(data)
+
+    print(metainfo['info']['name'])
+    print(metainfo['info']['length'])
+    print(metainfo['info']['piece length'])
 
 if __name__ == '__main__':
     torrent_file: str = 'debian-iso.torrent'

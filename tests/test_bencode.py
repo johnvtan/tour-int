@@ -1,7 +1,7 @@
 import unittest
 from bencode import *
 
-class BencodeTests(unittest.TestCase):
+class BencodeDecodeTests(unittest.TestCase):
     def test_decode_int(self):
         self.assertEqual(decode_int(b'i123e', 0), (123, 5))
         self.assertEqual(decode_int(b'i-123e', 0), (-123, 6))
@@ -45,4 +45,29 @@ class BencodeTests(unittest.TestCase):
         self.assertRaises(ValueError, decode_dict, b'di12ei23ee', 0)
         self.assertRaises(ValueError, decode_dict, b'dd1:a1:bee', 0)
         self.assertRaises(ValueError, decode_dict, b'i123e', 0)
+
+class BencodeEncodeTests(unittest.TestCase):
+    def test_encode_int(self):
+        self.assertEqual(encode_int(123), b'i123e')
+        self.assertEqual(encode_int(-123), b'i-123e')
+        self.assertEqual(encode_int(0), b'i0e')
+
+    def test_encode_string(self):
+        self.assertEqual(encode_string('hello'), b'5:hello')
+        self.assertEqual(encode_string(''), b'0:')
+
+    def test_encode_list(self):
+        self.assertEqual(encode_list(['a']), b'l1:ae')
+        self.assertEqual(encode_list(['a', 123]), b'l1:ai123ee')
+        self.assertEqual(encode_list(['a', ['b', -1], 3]), b'l1:al1:bi-1eei3ee')
+
+    def test_encode_dict(self):
+        self.assertEqual(encode_dict({'a':'b'}), b'd1:a1:be')
+        self.assertEqual(encode_dict({
+            'a': [1,-2],
+            'b': {'c': 'd'},
+            'c': 'd'
+            }), b'd1:ali1ei-2ee1:bd1:c1:de1:c1:de')
+
+        self.assertRaises(TypeError, encode_dict, {1: 'b'})
 
