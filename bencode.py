@@ -79,10 +79,6 @@ def decode_dict(bstring: str, idx: int) -> Tuple[Dict, int]:
     return ret_dict, idx+1
 
 def decode_any(bstring: str, idx: int) -> Tuple[Any, int]:
-    decoded_object = None
-    i: int = 0
-
-    ret = None
     if bstring[idx] == 'i':
         return decode_int(bstring, idx)
     elif bstring[idx] == 'l':
