@@ -116,13 +116,16 @@ def decode_dict(bstring: bytes, idx: int) -> Tuple[Dict, int]:
 
     while bstring[idx] != END_DELIMITER:
         key, idx = decode_string(bstring, idx)
+        #print('got key {}'.format(key))
         assert_idx_in_string(bstring, idx)
 
         value, idx = decode_any(bstring, idx)
+        #print('got value {}'.format(value))
         assert_idx_in_string(bstring, idx)
 
         ret_dict[key] = value 
 
+    #print('decode_dict got {}'.format(ret_dict))
     return ret_dict, idx+1
 
 def decode_any(bstring: bytes, idx: int) -> Tuple[Any, int]:
@@ -138,8 +141,11 @@ def decode_any(bstring: bytes, idx: int) -> Tuple[Any, int]:
 def encode_int(n: int) -> bytes:
     return bytes([INT_DELIMITER] + digits_to_bytes(n) + [END_DELIMITER])
 
-def encode_string(s: str) -> bytes:
+def encode_ascii_string(s: str) -> bytes:
     return bytes(digits_to_bytes(len(s)) + [STRING_SIZE_DELIMITER]) + s.encode('ascii')
+
+def encode_bytes_string(b: bytes) -> bytes:
+    return bytes(digits_to_bytes(len(b)) + [STRING_SIZE_DELIMITER]) + b
 
 def encode_list(lst: List) -> bytes:
     ret_tokens: bytearray = bytearray() 
@@ -157,8 +163,8 @@ def encode_dict(d: Dict) -> bytes:
 
     for key, val in d.items():
         if not isinstance(key, str):
-            raise TypeError('bencode.encode_dict: key must be a string')
-        ret_tokens.extend(encode_string(key))
+            raise TypeError('bencode.encode_dict: key must be an ascii string')
+        ret_tokens.extend(encode_ascii_string(key))
         ret_tokens.extend(encode(val))
 
     ret_tokens.append(END_DELIMITER)
@@ -169,11 +175,13 @@ def encode(obj: Any) -> bytes:
     if isinstance(obj, int):
         return encode_int(obj)
     elif isinstance(obj, str):
-        return encode_string(obj)
+        return encode_ascii_string(obj)
     elif isinstance(obj, list):
         return encode_list(obj)
     elif isinstance(obj, dict):
         return encode_dict(obj)
+    elif isinstance(obj, bytes):
+        return encode_bytes_string(obj)
 
     raise TypeError('bencode.encode parameter must be one of (int, str, list dict)')
 
