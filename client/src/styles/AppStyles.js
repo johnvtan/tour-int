@@ -5,20 +5,19 @@ export const GlobalStyle = createGlobalStyle`
     font-family:'Space Mono', monospace;
     background: #111111;
     color: #ffffff;
-    margin: 0;
     overflow: hidden;
   }
-`;
-
-export const AppContainer = styled.div`
-  margin-top: 160px;
-  width: 900px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 `;
 
 export const Container = styled.div`
   min-height: 100vh;
   min-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+`;
+
+export const AppContainer = styled.div`
+  margin-top: 64px;
+  width: 1200px;
 `;

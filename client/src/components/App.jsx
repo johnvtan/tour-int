@@ -1,6 +1,7 @@
 import React from "react";
 
 import { GlobalStyle, Container, AppContainer } from "../styles/AppStyles";
+import Title from "../components/Title";
 
 function App() {
   return (
@@ -8,7 +9,7 @@ function App() {
       <GlobalStyle />
       <Container>
         <AppContainer>
-          <h1>Hello, world!</h1>
+          <Title />
         </AppContainer>
       </Container>
     </>
