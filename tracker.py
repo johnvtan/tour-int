@@ -33,13 +33,13 @@ def send_ths_request(announce_url, info_hash, left, peer_id=consts.PEER_ID,
     }
 
     r = requests.get(announce_url, params=params)
-    return bencode.decode(r.text.encode('ascii'))
+    return bencode.decode(r.content)
 
 def get_info_hash(metainfo: Dict) -> bytearray:
     return hashlib.sha1(bencode.encode(metainfo['info'])).digest()
 
 if __name__ == '__main__':
-    torrent_file: str = 'charlie-chaplin-avi.torrent'
+    torrent_file: str = 'torrent-files/ubuntu.iso.torrent'
     metainfo = decode_torrent_file(torrent_file)
 
     info_hash = get_info_hash(metainfo)
