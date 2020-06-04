@@ -3,6 +3,7 @@ import socket
 import consts
 import tracker
 import sys
+import random
 
 HANDSHAKE_SIZE: int = 68
 
@@ -50,10 +51,11 @@ if __name__ == '__main__':
     tracker_response = tracker.send_ths_request(metainfo['announce'], info_hash,
             metainfo['info']['length'])
 
-    peer_info: Dict = tracker_response['peers'][0]
+    peer_info: Dict = tracker_response['peers'][random.randint(0, len(tracker_response['peers']))]
 
     peer_socket: socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     peer_socket.settimeout(5)
+    peer_socket.setblocking(True)
 
     print('Trying to connect to IP {} on port {}'.format(peer_info['ip'], peer_info['port']))
     print('peer_id: {}'.format(peer_info['peer id']))
@@ -64,12 +66,17 @@ if __name__ == '__main__':
         print('failed to connect: {}'.format(e))
         sys.exit(-1)
 
-    handshake_bytes = create_handshake_bytes(info_hash, peer_info['peer id'])
+    handshake_bytes = create_handshake_bytes(info_hash, consts.PEER_ID)
     print_handshake(handshake_bytes)
-    sent: int = peer_socket.send(bytes(handshake_bytes))
-    assert(sent == HANDSHAKE_SIZE)
 
-    received_handshake = peer_socket.recv(HANDSHAKE_SIZE)
+    received_handshake = bytearray()
+    tries: int = 10
+    while len(received_handshake) < HANDSHAKE_SIZE and tries > 0:
+        print('Try: {}'.format(11-tries))
+        sent = peer_socket.send(bytes(handshake_bytes))
+        assert(sent == HANDSHAKE_SIZE)
+        received_handshake = peer_socket.recv(HANDSHAKE_SIZE)
+        tries -= 1
 
     print('Handshake bytes: ', received_handshake)
     print_handshake(received_handshake)
