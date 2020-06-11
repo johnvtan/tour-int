@@ -3,6 +3,7 @@ import React from "react";
 import { GlobalStyle, Container, AppContainer } from "../styles/AppStyles";
 import Title from "../components/Title";
 import TorrentForm from "../components/TorrentForm";
+import TorrentTable from "../components/TorrentTable";
 
 function App() {
   return (
@@ -12,17 +13,7 @@ function App() {
         <AppContainer>
           <Title />
           <TorrentForm />
-          <h3>---------------------------</h3>
-          <h3>Stub: torrent table here</h3>
-          <h3>
-            exampleTorrent123 cool progress bar ||||||||||||||||||||||||||||
-          </h3>
-          <h3>
-            exampleTorrent123 cool progress bar ||||||||||||||||||||||||||||
-          </h3>
-          <h3>
-            exampleTorrent123 cool progress bar ||||||||||||||||||||||||||||
-          </h3>
+          <TorrentTable />
         </AppContainer>
       </Container>
     </>
