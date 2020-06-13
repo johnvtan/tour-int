@@ -8,7 +8,11 @@ const fakeData = [
     torrent_id: 1,
     amountDownloaded: 50,
     totalSize: 200,
+    speed: "120/kbps",
     status: "in progress",
+    seeds: "10",
+    peers: "22",
+    eta: "5 mins",
   },
   {
     name: "exampleTorrent2",
@@ -22,7 +26,11 @@ const fakeData = [
     torrent_id: 3,
     amountDownloaded: 960,
     totalSize: 1000,
+    speed: "120/kbps",
     status: "in progress",
+    seeds: "10",
+    peers: "22",
+    eta: "5 mins",
   },
 ];
 
