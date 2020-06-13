@@ -1,4 +1,5 @@
 import React from "react";
+import ProgressBar from "./ProgressBar";
 import {
   TableRow,
   TableRowAlternate,
@@ -16,7 +17,6 @@ const TorrentCard = (props) => {
     peers,
     eta,
   } = props.data;
-  const progress = (amountDownloaded / totalSize) * 100;
 
   return (
     <>
@@ -26,7 +26,12 @@ const TorrentCard = (props) => {
         <TableCell cellWidth="40px">{totalSize}</TableCell>
         <TableCell cellWidth="80px">{speed}</TableCell>
         <TableCell cellWidth="128px">{status}</TableCell>
-        <TableCell>[|||||||||||||||||||||{progress}%]</TableCell>
+        <TableCell cellWidth="255px">
+          <ProgressBar
+            amountDownloaded={amountDownloaded}
+            totalSize={totalSize}
+          />
+        </TableCell>
       </TableRow>
       <TableRowAlternate>
         <TableCell cellWidth="148px"></TableCell>
