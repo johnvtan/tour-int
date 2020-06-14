@@ -5,6 +5,7 @@ server:
 	python3 tourint/manage.py runserver
 
 client:
+	npm i --prefix ./client
 	npm start --prefix ./client
 
 run:
