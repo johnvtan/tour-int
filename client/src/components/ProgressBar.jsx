@@ -7,8 +7,8 @@ import {
 } from "../styles/ProgressBarStyles";
 
 function ProgressBar(props) {
-  const { amountDownloaded, totalSize } = props;
-  const progress = (amountDownloaded / totalSize) * 100;
+  const { downloaded_bytes, total_size_bytes } = props;
+  const progress = (downloaded_bytes / total_size_bytes) * 100;
 
   const bars = [];
   // hardcoding 1 bar every 5%, up to 20 max.

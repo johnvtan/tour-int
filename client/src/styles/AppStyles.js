@@ -19,5 +19,5 @@ export const Container = styled.div`
 
 export const AppContainer = styled.div`
   margin-top: 64px;
-  width: 800px;
+  width: 864px;
 `;
