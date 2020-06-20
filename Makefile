@@ -1,12 +1,15 @@
+PYTHON := python3
+NPM := npm
+
 all: run
 .PHONY: all server client run
 
 server:
-	python3 tourint/manage.py runserver
+	$(PYTHON) tourint/manage.py runserver
 
 client:
-	npm i --prefix ./client
-	npm start --prefix ./client
+	$(NPM) i --prefix ./client
+	$(NPM) start --prefix ./client
 
 run:
 	make server & make client
