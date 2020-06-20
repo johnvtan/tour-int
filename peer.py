@@ -119,17 +119,21 @@ class PeerMessage:
         if self.id == self.Id.KEEP_ALIVE:
             return bytearray(MESSAGE_LENGTH_SIZE)
 
-        message_length = 1 + len(self.payload)
+        message_length = 1 if not self.payload else 1 + len(self.payload) 
         ret = bytearray()
         ret.extend(message_length.to_bytes(self.MESSAGE_LENGTH_SIZE, byteorder='big'))
         ret.extend(self.id.value.to_bytes(1, byteorder='big'))
-        if len(payload):
+        if self.payload is not None and len(self.payload) > 0:
             ret.extend(self.payload)
         return bytes(ret)
 
     @classmethod
     def new_request(cls, piece_index, begin, length):
-        return cls(cls.Id.REQUEST, payload)
+        payload = bytearray()
+        payload.extend(piece_index.to_bytes(4, byteorder='big'))
+        payload.extend(begin.to_bytes(4, byteorder='big'))
+        payload.extend(length.to_bytes(4, byteorder='big'))
+        return cls(cls.Id.REQUEST, payload=payload)
 
     @classmethod
     def is_valid_message_id(cls, message_id):
@@ -199,6 +203,8 @@ class PieceDownload:
         self.blocks_to_request = set(range(num_blocks))
         self.blocks_received = set()
 
+        print('Total number of blocks: {}'.format(self.total_num_blocks))
+
     def get_next_block_request(self) -> PeerMessage: 
         next_block = next(iter(self.blocks_to_request))
         print('Requesting block {}'.format(next_block))
@@ -209,20 +215,24 @@ class PieceDownload:
         else:
             length = self.BLOCK_SIZE_BYTES
 
-        ret = PeerMessage.new_request(self.piece_index, self.next_requested_byte, length)
+        ret = PeerMessage.new_request(self.piece_index, start_byte, length)
         self.blocks_to_request.remove(next_block)
         return ret 
 
     def handle_block_response(self, piece_message):
-        assert(piece_message.id == PeerMessage.Id.REQUEST)
+        assert(piece_message.id == PeerMessage.Id.PIECE)
         piece_index = int.from_bytes(piece_message.payload[0:4], byteorder='big')
         assert(piece_index == self.piece_index)
 
         start_byte = int.from_bytes(piece_message.payload[4:8], byteorder='big')
 
-        assert(start_byte + len(piece_message.payload) - 8 < len(self.piece_bytes))
+        end_byte = start_byte + len(piece_message.payload[8:])
 
-        end_byte = start_byte + len(self.piece_bytes)
+        if end_byte > len(self.piece_bytes):
+            raise ValueError('End byte too large: got {}, max: {}'.format(end_byte,
+                len(self.piece_bytes)))
+
+        print('Got bytes {} to {}'.format(start_byte, end_byte))
         self.piece_bytes[start_byte:end_byte] = piece_message.payload[8:]
 
         received_block = start_byte // self.BLOCK_SIZE_BYTES
@@ -230,7 +240,7 @@ class PieceDownload:
         self.blocks_received.add(received_block)
 
     def has_more_blocks(self):
-        return len(self.blocks_received) < self.total_num_self.info_hash, blocks 
+        return len(self.blocks_received) < self.total_num_blocks 
 
 class PeerConnection:
     """Manages a connection and piece downloads from a peer"""
@@ -239,9 +249,10 @@ class PeerConnection:
     TIMEOUT_S: int = 5
     MAX_QUEUED_REQUESTS: int = 1
 
-    def __init__(self, peer_info: Dict, info_hash: bytearray):
+    def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
         self.peer_info = peer_info
         self.info_hash = info_hash
+        self.piece_length = piece_length
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.settimeout(self.TIMEOUT_S)
@@ -282,6 +293,7 @@ class PeerConnection:
             print('Did not receive a bitfield message on initialization, failed')
             return False
 
+        self.socket.settimeout(None)
         return True
     
     def validate_handshake(self, received: bytes) -> bool:
@@ -305,20 +317,26 @@ class PeerConnection:
         if not self.available_pieces.contains(piece_index):
             raise ValueError('Piece index {} not available'.format(piece_index))
 
-        self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None))
-        download_state = PieceDownload(piece_index, self.peer_info['piece_length'])
+        self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
+        download_state = PieceDownload(piece_index, self.piece_length)
 
-        while download_state.has_more_blocks():
+        while True:
             # We're choked at first, so wait until we receive an unchoke message
             self.receive_message(download_state)
             if self.choked:
                 continue
+
+            if not download_state.has_more_blocks():
+                break
+
             # send request message and try to download the piece
-            for _ in range(num_queued_requests, self.MAX_QUEUED_REQUESTS):
+            for _ in range(self.num_queued_requests, self.MAX_QUEUED_REQUESTS):
                 next_request = download_state.get_next_block_request()
                 self.socket.send(next_request.serialize())
+                self.num_queued_requests += 1
 
-        self.socket.send(PeerMessage(PeerMessage.Id.NOT_INTERESTED, None))
+        self.socket.send(PeerMessage(PeerMessage.Id.NOT_INTERESTED, None).serialize())
+        print('Finished downloading piece')
         return download_state.piece_bytes 
 
 
@@ -347,10 +365,9 @@ class PeerConnection:
             self.available_pieces = Bitfield(message.payload)
         elif message.id == PeerMessage.Id.REQUEST:
             print('Got request lol. ignoring')
-        elif message.id == PeerMessage.PIECE:
-            print('Got a new piece: index = {}, begin = {}, length = {}'.format())
+        elif message.id == PeerMessage.Id.PIECE:
             download_state.handle_block_response(message)
-
+            self.num_queued_requests -= 1
 
 
 if __name__ == '__main__':
@@ -361,6 +378,16 @@ if __name__ == '__main__':
             metainfo['info']['length'])
 
     peer_info: Dict = tracker_response['peers'][random.randint(0, len(tracker_response['peers']))]
-    connection = PeerConnection(peer_info, info_hash)
+
+    print('piece length: {}'.format(metainfo['info']['piece length']))
+    connection = PeerConnection(peer_info, info_hash, metainfo['info']['piece length'])
     if not connection.initialize_connection():
         print('bad could not initialize connection')
+        sys.exit(1)
+
+    for i in range(100000):
+        if connection.available_pieces.contains(i):
+            print('REQUESTING PIECE {}'.format(i))
+            piece_bytes = connection.download_piece(i)
+            break
+
