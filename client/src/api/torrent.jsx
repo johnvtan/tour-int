@@ -1,12 +1,13 @@
 import axios from "axios";
 
-export const createTorrent = (data) => {
+export const createTorrent = (formData) => {
   return axios({
     url: "BACKEND URL HERE",
     method: "POST",
     data: {
       torrent: {
-        url: data,
+        url: formData.url,
+        name: formData.name,
       },
     },
   });

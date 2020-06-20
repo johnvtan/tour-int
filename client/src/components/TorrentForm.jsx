@@ -2,30 +2,39 @@ import React, { useState } from "react";
 import { createTorrent } from "../api/torrent";
 
 function TorrentForm() {
-  const [value, setValue] = useState("");
+  const [values, setValues] = useState({ url: "", name: "" });
 
   const handleInputChange = (e) => {
-    setValue(e.target.value);
+    e.persist();
+
+    setValues((values) => ({ ...values, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    createTorrent(value)
+    createTorrent(values)
       .then((data) => console.log("POST SUCCESS", data))
       .catch((err) => console.warn("POST failed with message:", err));
-
-    setValue("");
+    setValues({ url: "", name: "" });
   };
 
   return (
     <>
       <form onSubmit={handleSubmit}>
-        <label htmlFor="add-torrent">Torrent link: </label>
+        <label htmlFor="url">Torrent link: </label>
         <input
           type="text"
-          name="add-torrent"
-          value={value}
+          name="url"
+          value={values.url}
+          required
+          onChange={handleInputChange}
+        />
+        <label htmlFor="name">Name: </label>
+        <input
+          type="text"
+          name="name"
+          value={values.name}
           required
           onChange={handleInputChange}
         />
