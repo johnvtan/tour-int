@@ -6,6 +6,8 @@ import {
   TableRowAlternate,
   TableCell,
 } from "../styles/TorrentCardStyles";
+import { AiOutlinePauseCircle, AiOutlinePlayCircle } from "react-icons/ai";
+import { FiDelete } from "react-icons/fi";
 
 const TorrentCard = (props) => {
   const {
@@ -24,8 +26,12 @@ const TorrentCard = (props) => {
     if (download_status === "completed") return "";
 
     return (
-      <div onClick={() => handleUpdateClick(file_hash)}>
-        {download_status === "in progress" ? "->" : "||"}
+      <div className="hoverable" onClick={() => handleUpdateClick(file_hash)}>
+        {download_status === "in progress" ? (
+          <AiOutlinePlayCircle fontSize="22" />
+        ) : (
+          <AiOutlinePauseCircle fontSize="22" />
+        )}
       </div>
     );
   };
@@ -37,6 +43,7 @@ const TorrentCard = (props) => {
   };
 
   const onUpdateTorrent = (file_hash, statusRequest) => {
+    alert("You requested " + statusRequest + " on file_hash: " + file_hash);
     updateStatus(file_hash, statusRequest)
       .then((data) => console.log("PATCH SUCCESS", data))
       // TODO: .then GET specific torrent again here for updated status, or use websocket
@@ -44,6 +51,7 @@ const TorrentCard = (props) => {
   };
 
   const onDeleteTorrent = (file_hash) => {
+    alert("You requested cancel on file_hash: " + file_hash);
     deleteTorrent(file_hash)
       .then((data) => console.log("DELETE SUCCESS", data))
       // TODO: .then GET all /torrents to see new list, or use websocket
@@ -65,7 +73,12 @@ const TorrentCard = (props) => {
           />
         </TableCell>
         <TableCell>{mediaControl()}</TableCell>
-        <TableCell onClick={() => onDeleteTorrent(file_hash)}>X</TableCell>
+        <TableCell
+          className="hoverable"
+          onClick={() => onDeleteTorrent(file_hash)}
+        >
+          <FiDelete fontSize="22" color="#d12626" />
+        </TableCell>
       </TableRow>
       <TableRowAlternate>
         <TableCell cellWidth="148px"></TableCell>

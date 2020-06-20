@@ -7,6 +7,10 @@ export const GlobalStyle = createGlobalStyle`
     color: #ffffff;
     overflow: hidden;
   }
+
+  .hoverable {
+    cursor: pointer
+  }
 `;
 
 export const Container = styled.div`
