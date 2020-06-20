@@ -4,7 +4,7 @@ import { Container, Text } from "../styles/TitleStyles";
 const Title = () => {
   return (
     <Container>
-      <Text>Tour-int</Text>
+      <Text>tour_int</Text>
     </Container>
   );
 };

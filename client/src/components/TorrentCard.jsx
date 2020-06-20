@@ -26,7 +26,10 @@ const TorrentCard = (props) => {
     if (download_status === "completed") return "";
 
     return (
-      <div className="hoverable" onClick={() => handleUpdateClick(file_hash)}>
+      <div
+        className="hoverable push-left"
+        onClick={() => handleUpdateClick(file_hash)}
+      >
         {download_status === "in progress" ? (
           <AiOutlinePlayCircle fontSize="22" />
         ) : (
@@ -74,7 +77,7 @@ const TorrentCard = (props) => {
         </TableCell>
         <TableCell>{mediaControl()}</TableCell>
         <TableCell
-          className="hoverable"
+          className="hoverable push-left"
           onClick={() => onDeleteTorrent(file_hash)}
         >
           <FiDelete fontSize="22" color="#d12626" />

@@ -3,13 +3,17 @@ import styled, { createGlobalStyle } from "styled-components";
 export const GlobalStyle = createGlobalStyle`
   body {
     font-family:'Space Mono', monospace;
-    background: #111111;
-    color: #ffffff;
+    // background: #111111;
+    // color: #ffffff;
     overflow: hidden;
   }
 
   .hoverable {
-    cursor: pointer
+    cursor: pointer;
+  }
+
+  .push-left {
+    margin-left: auto;
   }
 `;
 
