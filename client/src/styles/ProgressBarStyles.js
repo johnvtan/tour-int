@@ -10,6 +10,7 @@ export const Edge = styled.div`
 
 export const Bar = styled.div`
   font-weight: 700;
+  color: #26cf26;
 `;
 
 export const Percent = styled.div``;
