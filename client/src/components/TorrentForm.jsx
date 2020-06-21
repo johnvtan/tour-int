@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { createTorrent } from "../api/torrent";
+import { FormContainer, FormInput, SubmitButton } from "../styles/FormStyles";
 
 function TorrentForm() {
   const [values, setValues] = useState({ url: "", name: "" });
@@ -21,25 +22,27 @@ function TorrentForm() {
 
   return (
     <>
-      <form onSubmit={handleSubmit}>
+      <FormContainer onSubmit={handleSubmit}>
         <label htmlFor="url">Torrent link: </label>
-        <input
+        <FormInput
           type="text"
           name="url"
           value={values.url}
           required
           onChange={handleInputChange}
+          placeholder="enter url..."
         />
         <label htmlFor="name">Name: </label>
-        <input
+        <FormInput
           type="text"
           name="name"
           value={values.name}
           required
           onChange={handleInputChange}
+          placeholder="enter name..."
         />
-        <button>Submit</button>
-      </form>
+        <SubmitButton>Submit</SubmitButton>
+      </FormContainer>
     </>
   );
 }
