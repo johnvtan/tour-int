@@ -1,4 +1,5 @@
 from typing import Dict, Tuple
+from queue import Queue
 import socket
 import sys
 import random
@@ -7,6 +8,7 @@ import enum
 import consts
 import tracker
 import time
+import hashlib
 
 def read_from_socket_checked(s: socket.socket, size_bytes: int) -> bytes:
     ret = bytearray()
@@ -147,7 +149,6 @@ class PeerMessage:
         message_length_bytes = read_from_socket_checked(peer_socket, cls.MESSAGE_LENGTH_SIZE)
         message_length = int.from_bytes(message_length_bytes, byteorder='big')
 
-        print('Got message with length {}'.format(message_length))
         if message_length == 0:
             return cls(cls.Id.KEEP_ALIVE, None)
 
@@ -156,12 +157,9 @@ class PeerMessage:
         if not cls.is_valid_message_id(message_id):
             raise ValueError('Unknown message id {}'.format(message_id))
 
-        print('Got message id {}'.format(cls.Id(message_id)))
-
         if message_length == 1:
             return cls(cls.Id(message_id), None)
 
-        print('Reading payload...')
         payload_length = message_length - 1
         payload_bytes = read_from_socket_checked(peer_socket, payload_length)
         return cls(cls.Id(message_id), payload_bytes)
@@ -204,11 +202,8 @@ class PieceDownload:
         self.blocks_to_request = set(range(num_blocks))
         self.blocks_received = set()
 
-        print('Total number of blocks: {}'.format(self.total_num_blocks))
-
     def get_next_block_request(self) -> PeerMessage: 
         next_block = next(iter(self.blocks_to_request))
-        print('Requesting block {}'.format(next_block))
 
         start_byte = next_block * self.BLOCK_SIZE_BYTES
         if start_byte + self.BLOCK_SIZE_BYTES > len(self.piece_bytes):
@@ -233,11 +228,9 @@ class PieceDownload:
             raise ValueError('End byte too large: got {}, max: {}'.format(end_byte,
                 len(self.piece_bytes)))
 
-        print('Got bytes {} to {}'.format(start_byte, end_byte))
         self.piece_bytes[start_byte:end_byte] = piece_message.payload[8:]
 
         received_block = start_byte // self.BLOCK_SIZE_BYTES
-        print('Received block {}'.format(received_block))
         self.blocks_received.add(received_block)
 
     def all_blocks_received(self):
@@ -302,7 +295,6 @@ class PeerConnection:
     
     def validate_handshake(self, received: bytes) -> bool:
         handshake = PeerHandshake.deserialize(received)
-        print('received handshake {}'.format(str(handshake)))
         if handshake.info_hash != self.info_hash:
             print('mismatching info hash in handshake: got {}, expected\
                     {}'.format(handshake.info_hash, self.info_hash))
@@ -321,7 +313,6 @@ class PeerConnection:
         assert(self.peer_has_piece(piece_index))
 
         self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
-        print('Sent interested')
         download_state = PieceDownload(piece_index, self.piece_length)
 
         # in case we aren't choked, send some requests to start
@@ -332,7 +323,6 @@ class PeerConnection:
             self.send_block_requests(download_state)
 
         self.socket.send(PeerMessage(PeerMessage.Id.NOT_INTERESTED, None).serialize())
-        print('Finished downloading piece. sent uninterested')
         return download_state.piece_bytes 
 
     def send_block_requests(self, download_state):
@@ -342,7 +332,6 @@ class PeerConnection:
         
         for _ in range(self.num_queued_requests, self.MAX_QUEUED_REQUESTS):
             if not download_state.has_more_blocks_to_request():
-                print('no more blocks...')
                 break
             next_request = download_state.get_next_block_request()
             self.socket.send(next_request.serialize())
@@ -357,31 +346,26 @@ class PeerConnection:
         message = PeerMessage.receive_from_socket(self.socket)
 
         if message.id == PeerMessage.Id.CHOKE:
-            print('Got choked message')
             self.choked = True
         elif message.id == PeerMessage.Id.UNCHOKE:
-            print('Got unchoked message')
             self.choked = False
         elif message.id == PeerMessage.Id.INTERESTED:
-            print('Got an interested message. what does this mean')
+            pass
         elif message.id == PeerMessage.Id.NOT_INTERESTED:
-            print('Got an uninterested message.')
+            pass
         elif message.id == PeerMessage.Id.HAVE:
-            print('Got have message: new index = {}'.format(new_piece_index))
-            assert(message.payload == 4)
+            assert(len(message.payload) == 4)
             new_piece_index = int.from_bytes(message.payload, byteorder='big')
             self.available_pieces.set(new_piece_index)
         elif message.id == PeerMessage.Id.BITFIELD:
-            print('Got bitfield message')
             if self.available_pieces is not None:
                 raise ValueError('Error: erroneous bitfield message?')
             self.available_pieces = Bitfield(message.payload)
         elif message.id == PeerMessage.Id.REQUEST:
-            print('Got request lol. ignoring')
+            pass
         elif message.id == PeerMessage.Id.PIECE:
             download_state.handle_block_response(message)
             self.num_queued_requests -= 1
-
 
 if __name__ == '__main__':
     metainfo: Dict = tracker.decode_torrent_file('torrent-files/ubuntu.iso.torrent')
