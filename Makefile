@@ -5,7 +5,7 @@ all: run
 .PHONY: all server client run
 
 server:
-	$(PYTHON) tourint/manage.py runserver
+	$(PYTHON) backend/manage.py runserver
 
 client:
 	$(NPM) i --prefix ./client
