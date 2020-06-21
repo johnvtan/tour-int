@@ -6,6 +6,7 @@ import enum
 
 import consts
 import tracker
+import time
 
 def read_from_socket_checked(s: socket.socket, size_bytes: int) -> bytes:
     ret = bytearray()
@@ -239,15 +240,18 @@ class PieceDownload:
         print('Received block {}'.format(received_block))
         self.blocks_received.add(received_block)
 
-    def has_more_blocks(self):
-        return len(self.blocks_received) < self.total_num_blocks 
+    def all_blocks_received(self):
+        return len(self.blocks_received) == self.total_num_blocks
+
+    def has_more_blocks_to_request(self):
+        return len(self.blocks_to_request) > 0 
 
 class PeerConnection:
     """Manages a connection and piece downloads from a peer"""
 
     # Timeout time in seconds in case a peer fails to connect
     TIMEOUT_S: int = 5
-    MAX_QUEUED_REQUESTS: int = 1
+    MAX_QUEUED_REQUESTS: int = 5
 
     def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
         self.peer_info = peer_info
@@ -314,31 +318,40 @@ class PeerConnection:
         """
         # TODO send interested?
 
-        if not self.available_pieces.contains(piece_index):
-            raise ValueError('Piece index {} not available'.format(piece_index))
+        assert(self.peer_has_piece(piece_index))
 
         self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
+        print('Sent interested')
         download_state = PieceDownload(piece_index, self.piece_length)
 
-        while True:
+        # in case we aren't choked, send some requests to start
+        self.send_block_requests(download_state)
+        while not download_state.all_blocks_received():
             # We're choked at first, so wait until we receive an unchoke message
             self.receive_message(download_state)
-            if self.choked:
-                continue
-
-            if not download_state.has_more_blocks():
-                break
-
-            # send request message and try to download the piece
-            for _ in range(self.num_queued_requests, self.MAX_QUEUED_REQUESTS):
-                next_request = download_state.get_next_block_request()
-                self.socket.send(next_request.serialize())
-                self.num_queued_requests += 1
+            self.send_block_requests(download_state)
 
         self.socket.send(PeerMessage(PeerMessage.Id.NOT_INTERESTED, None).serialize())
-        print('Finished downloading piece')
+        print('Finished downloading piece. sent uninterested')
         return download_state.piece_bytes 
 
+    def send_block_requests(self, download_state):
+        if self.choked:
+            time.sleep(0.01)
+            return
+        
+        for _ in range(self.num_queued_requests, self.MAX_QUEUED_REQUESTS):
+            if not download_state.has_more_blocks_to_request():
+                print('no more blocks...')
+                break
+            next_request = download_state.get_next_block_request()
+            self.socket.send(next_request.serialize())
+            self.num_queued_requests += 1
+    
+    def peer_has_piece(self, index):
+        if not self.available_pieces:
+            raise ValueError('Bitfield not initialized')
+        return self.available_pieces.contains(index)
 
     def receive_message(self, download_state):
         message = PeerMessage.receive_from_socket(self.socket)
@@ -386,7 +399,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     for i in range(100000):
-        if connection.available_pieces.contains(i):
+        if connection.peer_has_piece(i):
             print('REQUESTING PIECE {}'.format(i))
             piece_bytes = connection.download_piece(i)
             break
