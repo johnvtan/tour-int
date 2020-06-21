@@ -75,7 +75,7 @@ class TorrentDownload:
     - All concurrency needed for that stuff
     """
 
-    MAX_NUM_CONNECTED_PEERS: int = 10
+    MAX_NUM_CONNECTED_PEERS: int = 20
     def __init__(self, torrent_file: str):
         self.metainfo: Dict = tracker.decode_torrent_file(torrent_file)
         self.announce_url = self.metainfo['announce']

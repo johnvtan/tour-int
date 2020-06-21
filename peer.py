@@ -244,7 +244,7 @@ class PeerConnection:
 
     # Timeout time in seconds in case a peer fails to connect
     TIMEOUT_S: int = 5
-    MAX_QUEUED_REQUESTS: int = 5
+    MAX_QUEUED_REQUESTS: int = 10
 
     def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
         self.peer_info = peer_info
@@ -290,7 +290,7 @@ class PeerConnection:
             print('Did not receive a bitfield message on initialization, failed')
             return False
 
-        self.socket.settimeout(None)
+        self.socket.settimeout(10)
         return True
     
     def validate_handshake(self, received: bytes) -> bool:
@@ -346,8 +346,10 @@ class PeerConnection:
         message = PeerMessage.receive_from_socket(self.socket)
 
         if message.id == PeerMessage.Id.CHOKE:
+            print('Thread choked')
             self.choked = True
         elif message.id == PeerMessage.Id.UNCHOKE:
+            print('Thread unchoked')
             self.choked = False
         elif message.id == PeerMessage.Id.INTERESTED:
             pass
