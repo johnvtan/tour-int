@@ -7,8 +7,12 @@ import enum
 import time
 import hashlib
 
-from . import consts
-from . import tracker
+if __package__ is None or __package__ == '':
+    import consts
+    import tracker
+else:
+    from . import consts
+    from . import tracker
 
 def read_from_socket_checked(s: socket.socket, size_bytes: int) -> bytes:
     ret = bytearray()
@@ -137,6 +141,10 @@ class PeerMessage:
         payload.extend(begin.to_bytes(4, byteorder='big'))
         payload.extend(length.to_bytes(4, byteorder='big'))
         return cls(cls.Id.REQUEST, payload=payload)
+    
+    @classmethod
+    def is_state_message(cls, message_id):
+        return message_id in [cls.Id.CHOKE, cls.Id.UNCHOKE, cls.Id.INTERESTED, cls.Id.NOT_INTERESTED]
 
     @classmethod
     def is_valid_message_id(cls, message_id):
@@ -215,20 +223,19 @@ class PieceDownload:
         self.blocks_to_request.remove(next_block)
         return ret 
 
-    def handle_block_response(self, piece_message):
-        assert(piece_message.id == PeerMessage.Id.PIECE)
-        piece_index = int.from_bytes(piece_message.payload[0:4], byteorder='big')
+    def handle_block_response(self, payload):
+        piece_index = int.from_bytes(payload[0:4], byteorder='big')
         assert(piece_index == self.piece_index)
 
-        start_byte = int.from_bytes(piece_message.payload[4:8], byteorder='big')
+        start_byte = int.from_bytes(payload[4:8], byteorder='big')
 
-        end_byte = start_byte + len(piece_message.payload[8:])
+        end_byte = start_byte + len(payload[8:])
 
         if end_byte > len(self.piece_bytes):
             raise ValueError('End byte too large: got {}, max: {}'.format(end_byte,
                 len(self.piece_bytes)))
 
-        self.piece_bytes[start_byte:end_byte] = piece_message.payload[8:]
+        self.piece_bytes[start_byte:end_byte] = payload[8:]
 
         received_block = start_byte // self.BLOCK_SIZE_BYTES
         self.blocks_received.add(received_block)
@@ -243,7 +250,7 @@ class PeerConnection:
     """Manages a connection and piece downloads from a peer"""
 
     # Timeout time in seconds in case a peer fails to connect
-    TIMEOUT_S: int = 5
+    CONNECTION_TIMEOUT_S: int = 5
     MAX_QUEUED_REQUESTS: int = 10
 
     def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
@@ -252,7 +259,6 @@ class PeerConnection:
         self.piece_length = piece_length
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.settimeout(self.TIMEOUT_S)
         self.choked = True
 
         self.peer_id = None
@@ -271,33 +277,39 @@ class PeerConnection:
         peer.
         """
         # TODO how to track state of connection if this fails?
-        print('initializing connection')
+        print('{} initializing connection'.format(str(self)))
+
+        self.socket.settimeout(self.CONNECTION_TIMEOUT_S)
         self.socket.connect((self.peer_info['ip'], self.peer_info['port']))
 
         handshake = PeerHandshake(consts.PEER_ID, self.info_hash)
 
-        print("Sent handshake {}".format(str(handshake)))
         self.socket.send(handshake.serialize())
 
         received_handshake = self.socket.recv(PeerHandshake.HANDSHAKE_SIZE)
         if not self.validate_handshake(received_handshake):
-            print("Bad handshake")
+            print('{} could not validate handshake'.format(str(self)))
             return False
 
         # receive one message, hope it is bitfield message
-        self.receive_message(None)
-        if self.available_pieces is None:
-            print('Did not receive a bitfield message on initialization, failed')
+        message = PeerMessage.receive_from_socket(self.socket)
+        if message.id != PeerMessage.Id.BITFIELD:
+            print('{} did not receive expected bitfield message'.format(str(self)))
             return False
 
-        self.socket.settimeout(10)
+        self.handle_bitfield(message.payload)
+        assert(self.available_pieces is not None)
+
+        self.socket.settimeout(None)
+        print('{} Successfully connected'.format(str(self)))
+
+        # Just send that we're interested to all peers
+        self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
         return True
     
     def validate_handshake(self, received: bytes) -> bool:
         handshake = PeerHandshake.deserialize(received)
         if handshake.info_hash != self.info_hash:
-            print('mismatching info hash in handshake: got {}, expected\
-                    {}'.format(handshake.info_hash, self.info_hash))
             return False
         
         self.peer_id = handshake.peer_id
@@ -308,29 +320,30 @@ class PeerConnection:
 
         Assumes that a valid bitfield has been received
         """
-        # TODO send interested?
 
         assert(self.peer_has_piece(piece_index))
 
-        self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
         download_state = PieceDownload(piece_index, self.piece_length)
 
         # in case we aren't choked, send some requests to start
-        self.send_block_requests(download_state)
         while not download_state.all_blocks_received():
-            # We're choked at first, so wait until we receive an unchoke message
-            self.receive_message(download_state)
-            self.send_block_requests(download_state)
+            if not self.choked:
+                self.send_block_requests(download_state)
 
-        self.socket.send(PeerMessage(PeerMessage.Id.NOT_INTERESTED, None).serialize())
+            message = PeerMessage.receive_from_socket(self.socket)
+            if PeerMessage.is_state_message(message.id):
+                self.handle_state_message(message.id)
+            elif message.id == PeerMessage.Id.BITFIELD:
+                self.handle_bitfield(message.payload)
+            elif message.id == PeerMessage.Id.HAVE:
+                self.handle_have(message.payload)
+            elif message.id == PeerMessage.Id.PIECE:
+                self.handle_piece(message.payload, download_state)
+
         return download_state.piece_bytes 
 
     def send_block_requests(self, download_state):
-        if self.choked:
-            time.sleep(0.01)
-            return
-        
-        for _ in range(self.num_queued_requests, self.MAX_QUEUED_REQUESTS):
+        while self.num_queued_requests < self.MAX_QUEUED_REQUESTS:
             if not download_state.has_more_blocks_to_request():
                 break
             next_request = download_state.get_next_block_request()
@@ -342,33 +355,34 @@ class PeerConnection:
             raise ValueError('Bitfield not initialized')
         return self.available_pieces.contains(index)
 
-    def receive_message(self, download_state):
-        message = PeerMessage.receive_from_socket(self.socket)
-
-        if message.id == PeerMessage.Id.CHOKE:
-            print('Thread choked')
+    def handle_state_message(self, message_id):
+        if message_id == PeerMessage.Id.CHOKE:
+            print('CHOKED')
             self.choked = True
-        elif message.id == PeerMessage.Id.UNCHOKE:
-            print('Thread unchoked')
+        elif message_id == PeerMessage.Id.UNCHOKE:
+            print('UNCHOKED')
             self.choked = False
-        elif message.id == PeerMessage.Id.INTERESTED:
+        elif message_id == PeerMessage.Id.INTERESTED:
             pass
-        elif message.id == PeerMessage.Id.NOT_INTERESTED:
+        elif message_id == PeerMessage.Id.NOT_INTERESTED:
             pass
-        elif message.id == PeerMessage.Id.HAVE:
-            assert(len(message.payload) == 4)
-            new_piece_index = int.from_bytes(message.payload, byteorder='big')
-            self.available_pieces.set(new_piece_index)
-        elif message.id == PeerMessage.Id.BITFIELD:
-            if self.available_pieces is not None:
-                raise ValueError('Error: erroneous bitfield message?')
-            self.available_pieces = Bitfield(message.payload)
-        elif message.id == PeerMessage.Id.REQUEST:
-            pass
-        elif message.id == PeerMessage.Id.PIECE:
-            download_state.handle_block_response(message)
-            self.num_queued_requests -= 1
 
+    def handle_bitfield(self, payload):
+        if self.available_pieces is not None:
+            raise ValueError('Error: erroneous bitfield message?')
+        self.available_pieces = Bitfield(payload)
+
+    def handle_have(self, payload):
+        assert(len(payload) == 4)
+        assert(self.available_pieces is not None)
+        new_piece_index = int.from_bytes(payload, byteorder='big')
+        self.available_pieces.set(new_piece_index)
+
+    def handle_piece(self, payload, download_state):
+        download_state.handle_block_response(payload)
+        self.num_queued_requests -= 1
+
+    
 if __name__ == '__main__':
     metainfo: Dict = tracker.decode_torrent_file('torrent-files/ubuntu.iso.torrent')
     info_hash = tracker.get_info_hash(metainfo)

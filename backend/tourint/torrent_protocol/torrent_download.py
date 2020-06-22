@@ -5,9 +5,16 @@ import pathlib
 import queue
 from typing import Dict, List
 
-from . import bencode
-from . import tracker
-from . import peer
+# TODO python imports suck
+if __package__ is None or __package__ == '':
+    # This means I'm running the script directly which means I can't use relative imports
+    import bencode
+    import tracker
+    import peer
+else:
+    from . import bencode
+    from . import tracker
+    from . import peer
 
 TORRENT_OUTPUT_DIRECTORY: str = pathlib.Path(__file__).absolute().parent
 
@@ -76,7 +83,7 @@ class TorrentDownload:
     - All concurrency needed for that stuff
     """
 
-    MAX_NUM_CONNECTED_PEERS: int = 20
+    MAX_NUM_CONNECTED_PEERS: int = 5 
     def __init__(self, torrent_file: str):
         self.metainfo: Dict = tracker.decode_torrent_file(torrent_file)
         self.announce_url = self.metainfo['announce']
@@ -151,7 +158,7 @@ class TorrentDownload:
             completed_piece = completed_queue.get()
             pieces_to_download.remove(completed_piece)
             num_pieces_downloaded += 1
-            pct = num_pieces_downloaded / total_pieces
+            pct = num_pieces_downloaded / total_pieces * 100
             print('Got piece {}. {}% complete'.format(completed_piece, pct))
 
         download_finished_event.set()

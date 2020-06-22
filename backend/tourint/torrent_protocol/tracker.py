@@ -2,8 +2,12 @@ from typing import Dict
 import requests
 import hashlib
 
-from . import consts
-from . import bencode
+if __package__ is None or __package__ == '':
+    import consts
+    import bencode
+else:
+    from . import consts
+    from . import bencode
 
 
 def decode_torrent_file(filename: str) -> Dict:
