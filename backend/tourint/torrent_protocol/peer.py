@@ -171,7 +171,7 @@ class PeerMessage:
         payload_length = message_length - 1
         payload_bytes = read_from_socket_checked(peer_socket, payload_length)
         return cls(cls.Id(message_id), payload_bytes)
-
+    
 class Bitfield:
     def __init__(self, bitfield_bytes):
         assert(bitfield_bytes is not None)
@@ -253,6 +253,7 @@ class PeerConnection:
     CONNECTION_TIMEOUT_S: int = 5
     MAX_QUEUED_REQUESTS: int = 10
 
+
     def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
         self.peer_info = peer_info
         self.info_hash = info_hash
@@ -266,6 +267,8 @@ class PeerConnection:
         self.num_queued_requests = 0
 
         self.available_pieces = None
+
+        self.buffer = bytearray()
 
     def __str__(self):
         return "PeerConnection on IP = {}:{} for hash {}".format(self.peer_info['ip'],
@@ -314,6 +317,36 @@ class PeerConnection:
         
         self.peer_id = handshake.peer_id
         return True
+
+    def peer_has_piece(self, index):
+        if not self.available_pieces:
+            raise ValueError('Bitfield not initialized')
+        return self.available_pieces.contains(index)
+
+    def handle_state_message(self, message_id):
+        if message_id == PeerMessage.Id.CHOKE:
+            self.choked = True
+        elif message_id == PeerMessage.Id.UNCHOKE:
+            self.choked = False
+        elif message_id == PeerMessage.Id.INTERESTED:
+            pass
+        elif message_id == PeerMessage.Id.NOT_INTERESTED:
+            pass
+
+    def handle_bitfield(self, payload):
+        if self.available_pieces is not None:
+            raise ValueError('Error: erroneous bitfield message?')
+        self.available_pieces = Bitfield(payload)
+
+    def handle_have(self, payload):
+        assert(len(payload) == 4)
+        assert(self.available_pieces is not None)
+        new_piece_index = int.from_bytes(payload, byteorder='big')
+        self.available_pieces.set(new_piece_index)
+
+    def handle_piece(self, payload, download_state):
+        download_state.handle_block_response(payload)
+        self.num_queued_requests -= 1
     
     def download_piece(self, piece_index):
         """Runs loop to download a full piece from the peer.
@@ -350,38 +383,6 @@ class PeerConnection:
             self.socket.send(next_request.serialize())
             self.num_queued_requests += 1
     
-    def peer_has_piece(self, index):
-        if not self.available_pieces:
-            raise ValueError('Bitfield not initialized')
-        return self.available_pieces.contains(index)
-
-    def handle_state_message(self, message_id):
-        if message_id == PeerMessage.Id.CHOKE:
-            print('CHOKED')
-            self.choked = True
-        elif message_id == PeerMessage.Id.UNCHOKE:
-            print('UNCHOKED')
-            self.choked = False
-        elif message_id == PeerMessage.Id.INTERESTED:
-            pass
-        elif message_id == PeerMessage.Id.NOT_INTERESTED:
-            pass
-
-    def handle_bitfield(self, payload):
-        if self.available_pieces is not None:
-            raise ValueError('Error: erroneous bitfield message?')
-        self.available_pieces = Bitfield(payload)
-
-    def handle_have(self, payload):
-        assert(len(payload) == 4)
-        assert(self.available_pieces is not None)
-        new_piece_index = int.from_bytes(payload, byteorder='big')
-        self.available_pieces.set(new_piece_index)
-
-    def handle_piece(self, payload, download_state):
-        download_state.handle_block_response(payload)
-        self.num_queued_requests -= 1
-
     
 if __name__ == '__main__':
     metainfo: Dict = tracker.decode_torrent_file('torrent-files/ubuntu.iso.torrent')
