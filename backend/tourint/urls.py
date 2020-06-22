@@ -1,6 +1,7 @@
 from django.urls import path
-from .views import ListTorrentsView
+from . import views
 
 urlpatterns = [
-    path('', ListTorrentsView.as_view(), name='torrents-all')
+    path('', views.handle_request_to_base_directory, name='torrents-all'),
+    path('<str:file_hash>/', views.handle_request_to_hash)
 ]
