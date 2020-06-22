@@ -2,8 +2,8 @@ from typing import Dict
 import requests
 import hashlib
 
-import consts
-import bencode
+from . import consts
+from . import bencode
 
 
 def decode_torrent_file(filename: str) -> Dict:

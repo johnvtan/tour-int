@@ -4,11 +4,11 @@ import socket
 import sys
 import random
 import enum
-
-import consts
-import tracker
 import time
 import hashlib
+
+from . import consts
+from . import tracker
 
 def read_from_socket_checked(s: socket.socket, size_bytes: int) -> bytes:
     ret = bytearray()

@@ -1,12 +1,13 @@
-import bencode
-import tracker
-import peer
 import hashlib
 import threading
 import os
 import pathlib
 import queue
 from typing import Dict, List
+
+from . import bencode
+from . import tracker
+from . import peer
 
 TORRENT_OUTPUT_DIRECTORY: str = pathlib.Path(__file__).absolute().parent
 
