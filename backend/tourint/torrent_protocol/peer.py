@@ -165,6 +165,7 @@ class PeerMessage:
 
         Returns None if there isn't enough data in the buffer
         """
+        #print('from_ring_buffer with {} bytes'.format(len(buf)))
         if len(buf) < cls.MESSAGE_LENGTH_SIZE:
             return None
         
@@ -175,9 +176,11 @@ class PeerMessage:
             buf.remove(cls.MESSAGE_LENGTH_SIZE)
             return cls(cls.Id.KEEP_ALIVE, 0)
         
-        if len(buf) < message_length:
+        #print('message length {}'.format(message_length))
+        if len(buf) < message_length + cls.MESSAGE_LENGTH_SIZE:
             # Incomplete header
             # Don't remove anything from the buffer, wait for next byte to get a full header
+            ##print('incomplete header: buffer needs {} bytes'.format(message_length + 4))
             return None
 
         # Have a full header (length + message id)
@@ -272,7 +275,7 @@ class PeerConnection:
     # Timeout time in seconds in case a peer fails to connect
     CONNECTION_TIMEOUT_S: int = 5
     MAX_QUEUED_REQUESTS: int = 10
-    BUFFER_PADDING: int = 1024
+    BUFFER_PADDING: int = 4096 
 
     class State(enum.Enum):
         INIT_HANDSHAKE = 0
@@ -294,7 +297,7 @@ class PeerConnection:
         self.peer_id = None
 
         self.num_queued_requests = 0
-        self.buffer = ring_buffer.RingBuffer(2*PieceDownload.BLOCK_SIZE_BYTES + self.BUFFER_PADDING)
+        self.buffer = ring_buffer.RingBuffer(PieceDownload.BLOCK_SIZE_BYTES + self.BUFFER_PADDING)
 
         self.available_pieces = None
         self.state: self.State = self.State.DISCONNECTED 
@@ -336,7 +339,6 @@ class PeerConnection:
         
         self.peer_id = handshake.peer_id
         self.state = self.State.INIT_BITFIELD
-        self.socket.settimeout(None)
 
     def peer_has_piece(self, index):
         if not self.available_pieces:
@@ -429,6 +431,7 @@ class PeerConnection:
             print('Connection got bitfield!')
             self.handle_bitfield(message.payload)
             self.state = self.State.IDLE
+            self.socket.settimeout(None)
             self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
 
 
@@ -472,9 +475,10 @@ class PeerConnection:
     def read_from_socket(self):
         recv_length = connection.buffer.empty_space()
         if recv_length == 0:
-            print('buffer full')
+            print('buffer full pray 2 jesus there\'s a full message in there')
             return
         recv = connection.socket.recv(recv_length)
+
         if len(recv) == 0:
             print('disconnected because recv_length is 0')
             self.set_disconnected()
@@ -511,8 +515,8 @@ if __name__ == '__main__':
     print(connection.state)
 
     piece_index = next(i for i in range(1000000) if connection.peer_has_piece(i))
-    print('requesting piece {}'.format(piece_index))
-    connection.start_piece_download(piece_index)
+    print('requesting piece {}'.format(42))
+    connection.start_piece_download(42)
 
     while not connection.is_download_completed():
         connection.read_from_socket()
