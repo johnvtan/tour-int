@@ -180,7 +180,8 @@ class PeerMessage:
         if len(buf) < message_length + cls.MESSAGE_LENGTH_SIZE:
             # Incomplete header
             # Don't remove anything from the buffer, wait for next byte to get a full header
-            ##print('incomplete header: buffer needs {} bytes'.format(message_length + 4))
+            print('incomplete header: buffer needs {} bytes but only has {}'.format(message_length + 4,
+                len(buf)))
             return None
 
         # Have a full header (length + message id)

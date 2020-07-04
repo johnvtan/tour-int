@@ -98,7 +98,7 @@ class TorrentDownload:
 
         read_only_flags = select.POLLIN | select.POLLPRI | select.POLLHUP | select.POLLERR
         self.poll_object = select.poll()
-        for peer_info in peer_info_list:
+        for peer_info in peer_info_list[:10]:
             peer_connection = peer.PeerConnection(peer_info, self.info_hash, self.info['piece length'])
             try:
                 peer_connection.initialize_connection()
@@ -125,8 +125,7 @@ class TorrentDownload:
         elif event == select.POLLERR:
             print('peer had error??')
         elif event == select.POLLNVAL:
-            #print('peer invalid??')
-            pass
+            print('peer {} invalid??'.format(peer_connection))
  
     def run_download(self):
         print('Download starting...')
