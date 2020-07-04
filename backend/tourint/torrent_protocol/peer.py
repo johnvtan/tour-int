@@ -257,7 +257,6 @@ class PieceDownload:
             raise ValueError('End byte too large: got {}, max: {}'.format(end_byte,
                 len(self.piece_bytes)))
 
-        print('Got block from {} to {}'.format(start_byte, end_byte))
         self.piece_bytes[start_byte:end_byte] = payload[8:]
 
         received_block = start_byte // self.BLOCK_SIZE_BYTES
@@ -297,7 +296,7 @@ class PeerConnection:
         self.peer_id = None
 
         self.num_queued_requests = 0
-        self.buffer = ring_buffer.RingBuffer(PieceDownload.BLOCK_SIZE_BYTES + self.BUFFER_PADDING)
+        self.buffer = ring_buffer.RingBuffer(2*PieceDownload.BLOCK_SIZE_BYTES + self.BUFFER_PADDING)
 
         self.available_pieces = None
         self.state: self.State = self.State.DISCONNECTED 
@@ -308,7 +307,7 @@ class PeerConnection:
         return "PeerConnection on IP = {}:{} for hash {}".format(self.peer_info['ip'],
                 self.peer_info['port'], self.info_hash)
 
-    def initialize_connection(self) -> bool:
+    def initialize_connection(self):
         """
         Begin handshaking sequence, change state to initialized
         """
@@ -347,10 +346,8 @@ class PeerConnection:
 
     def handle_state_message(self, message_id):
         if message_id == PeerMessage.Id.CHOKE:
-            print('choked')
             self.choked = True
         elif message_id == PeerMessage.Id.UNCHOKE:
-            print('unchoked')
             self.choked = False
         elif message_id == PeerMessage.Id.INTERESTED:
             pass
@@ -384,10 +381,14 @@ class PeerConnection:
         assert(self.state == self.State.IDLE)
         assert(self.peer_has_piece(piece_index))
         
+        print('Starting download on piece {}'.format(piece_index))
         self.state = self.State.DOWNLOADING
         self.download_state = PieceDownload(piece_index, self.piece_length)
         if not self.choked:
             self.send_block_requests(self.download_state)
+    
+    def is_idle(self):
+        return self.state == self.State.IDLE
 
     def append_to_buffer(self, data):
         self.buffer.write(data)
@@ -397,6 +398,11 @@ class PeerConnection:
             print('Error: can\'t get piece bytes if download not complete')
             return None
         return self.download_state.piece_bytes
+    
+    def get_current_piece_index(self):
+        if not self.download_state:
+            return -1
+        return self.download_state.piece_index
 
     def set_paused(self):
         self.state = self.State.PAUSED
@@ -411,10 +417,10 @@ class PeerConnection:
 
     def is_download_completed(self):
         if not self.download_state:
-            print('Err: no initialized download')
+            #print('Err: no initialized download')
             return False
 
-        return self.download_state.all_blocks_received()
+        return self.download_state.all_blocks_received() and self.state == self.State.IDLE
 
     def run_init_states(self):
         if self.state == self.State.INIT_HANDSHAKE:
@@ -428,7 +434,6 @@ class PeerConnection:
                 print('Error! {} expected bitfield msg but got {}'.format(str(self), message.id))
                 return
             
-            print('Connection got bitfield!')
             self.handle_bitfield(message.payload)
             self.state = self.State.IDLE
             self.socket.settimeout(None)
@@ -462,6 +467,9 @@ class PeerConnection:
         if not self.choked:
             self.send_block_requests(self.download_state)
 
+        if self.download_state.all_blocks_received():
+            self.state = self.State.IDLE
+
     def run_pause_state(self, send_keep_alive=False):
         assert(self.state == self.State.PAUSED)
         self.handle_messages_from_buffer(False)
@@ -473,17 +481,25 @@ class PeerConnection:
         self.handle_messages_from_buffer(False)
 
     def read_from_socket(self):
-        recv_length = connection.buffer.empty_space()
+        recv_length = self.buffer.empty_space()
         if recv_length == 0:
             print('buffer full pray 2 jesus there\'s a full message in there')
             return
-        recv = connection.socket.recv(recv_length)
+        recv = self.socket.recv(recv_length)
 
         if len(recv) == 0:
-            print('disconnected because recv_length is 0')
-            self.set_disconnected()
             return
         self.append_to_buffer(recv)
+
+    def run_state_machine(self):
+        if self.state == self.State.INIT_HANDSHAKE or self.state == self.State.INIT_BITFIELD:
+            self.run_init_states()
+        elif self.state == self.State.IDLE:
+            self.run_idle_state()
+        elif self.state == self.State.PAUSED:
+            self.run_pause_state()
+        elif self.state == self.State.DOWNLOADING:
+            self.run_download_state()
 
     
 if __name__ == '__main__':

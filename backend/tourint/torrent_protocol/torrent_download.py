@@ -3,6 +3,8 @@ import threading
 import os
 import pathlib
 import queue
+import select
+from collections import deque
 from typing import Dict, List
 
 # TODO python imports suck
@@ -28,35 +30,6 @@ def write_piece_to_file(info_hash, piece_idx, piece_bytes, output_directory):
 
     with open(piece_file_path, 'wb+') as f:
         f.write(piece_bytes)
-
-
-def download_thread_function(peer_connection, download_queue, completed_queue, finished_event,
-        output_directory):
-    while not finished_event.is_set():
-        try:
-            piece_idx, piece_hash = download_queue.get(timeout=0.5)
-            if not peer_connection.peer_has_piece(piece_idx):
-                download_queue.put((piece_idx, piece_hash))
-                continue
-            
-            try:
-                piece_bytes = peer_connection.download_piece(piece_idx)
-            except Exception as e:
-                # if a piece download fails, make sure to return the piece back to the download
-                # queue otherwise the download will never finish
-                print('peer connection failed {}'.format(e))
-                download_queue.put((piece_idx, piece_hash))
-                return
-
-            calculated_hash = hashlib.sha1(piece_bytes).digest()
-            if calculated_hash != piece_hash:
-                download_queue.put((piece_idx, piece_hash))
-                continue
-
-            write_piece_to_file(peer_connection.info_hash, piece_idx, piece_bytes, output_directory)
-            completed_queue.put(piece_idx)
-        except queue.Empty:
-            continue
 
 
 class PieceHashes:
@@ -89,87 +62,103 @@ class TorrentDownload:
         self.announce_url = self.metainfo['announce']
         self.info = self.metainfo['info']
 
+        self.hashes = PieceHashes(self.info['pieces'])
+
         self.info_hash = hashlib.sha1(bencode.encode(self.info)).digest() 
 
-        self.peer_connections = []
+        self.output_directory = TORRENT_OUTPUT_DIRECTORY/("torrent_" + self.info_hash.hex())
+
+        self.poll_object = None
+
+        # maps from socket fd to peer connection object
+        self.peer_connections = {}
+
+        self.pieces_to_download = deque([i for i in range(len(self.hashes))])
+        self.completed_pieces = set()
+        self.num_dc = 0
 
     def contact_tracker(self):
         return tracker.send_ths_request(self.announce_url, self.info_hash, self.info['length'])
 
-    @classmethod
-    def connect_to_peers(cls, peers, info_hash, piece_length) -> List[peer.PeerConnection]:
-        connected = []
-        # TODO will this be slow when I have a lot/will I need to thread this too?
-        # I might be dropped if I try to wait for all connections
-        for peer_info in peers:
-            if len(connected) >= cls.MAX_NUM_CONNECTED_PEERS:
-                break
+    def setup_output_directory(self):
+        print('Starting download in directory {}'.format(self.output_directory.as_posix()))
 
-            peer_connection = peer.PeerConnection(peer_info, info_hash, piece_length) 
-
-            try:
-                init_ret = peer_connection.initialize_connection()
-                if init_ret:
-                    connected.append(peer_connection)
-            except Exception as e:
-                print('Failed to connect to peer {} because {}'.format(str(peer_connection), e))
-
-        return connected
-
-    def run_download(self):
-        tracker_response = self.contact_tracker()
-        peers = tracker_response['peers']
-        piece_length = self.info['piece length']
-
-        hashes = PieceHashes(self.info['pieces'])
-
-        pieces_to_download = set(range(len(hashes)))
-        num_pieces_downloaded = 0
-        total_pieces = len(hashes)
-        download_queue = queue.Queue()
-        completed_queue = queue.Queue()
-        download_finished_event = threading.Event()
-        output_directory = TORRENT_OUTPUT_DIRECTORY/("torrent_" + self.info_hash.hex())
-        print('Starting download in directory {}'.format(output_directory.as_posix()))
-
-        if os.path.exists(output_directory):
+        if os.path.exists(self.output_directory):
             print('Error: directory already exists, not downloading')
             return
         
-        os.makedirs(output_directory.as_posix())
+        os.makedirs(self.output_directory.as_posix())
+    
+    def combine_piece_files(self):
+        pass
 
-        for i in range(len(hashes)):
-            download_queue.put((i, hashes[i]))
+    def initialize(self):
+        tracker_response = self.contact_tracker()
+        peer_info_list = tracker_response['peers']
 
-        self.peer_connections = self.connect_to_peers(peers, self.info_hash, piece_length)
-        assert(len(self.peer_connections) > 0)
+        read_only_flags = select.POLLIN | select.POLLPRI | select.POLLHUP | select.POLLERR
+        self.poll_object = select.poll()
+        for peer_info in peer_info_list:
+            peer_connection = peer.PeerConnection(peer_info, self.info_hash, self.info['piece length'])
+            try:
+                peer_connection.initialize_connection()
+            except Exception as e:
+                print('Could not connect: {}'.format(e))
+                continue
+            self.peer_connections[peer_connection.socket.fileno()] = peer_connection
+            self.poll_object.register(peer_connection.socket, read_only_flags)
 
-        thread_args = [(p, download_queue, completed_queue, download_finished_event,\
-            output_directory.as_posix()) for p in self.peer_connections]
+        print('initialized {} connections'.format(len(self.peer_connections)))
 
-        threads = [threading.Thread(target=download_thread_function, args=args) for args in\
-                thread_args]
+    def handle_poll_event_for_peer(self, peer_connection, event):
+        if event == select.POLLHUP or event == select.POLLRDHUP:
+            self.num_dc += 1
+            print('{} disconnected: {}'.format(str(peer_connection), self.num_dc))
+            peer_connection.set_disconnected()
+            unfinished_piece = peer_connection.get_current_piece_index()
+            if unfinished_piece >= 0:
+                self.pieces_to_download.append(unfinished_piece)
+        elif event == select.POLLIN or event == select.POLLPRI:
+            #print('peer got data')
+            peer_connection.read_from_socket()
+            peer_connection.run_state_machine()
+        elif event == select.POLLERR:
+            print('peer had error??')
+        elif event == select.POLLNVAL:
+            #print('peer invalid??')
+            pass
+ 
+    def run_download(self):
+        print('Download starting...')
+        while len(self.completed_pieces) < len(self.hashes):
+            for fd, event in self.poll_object.poll():
+                peer_connection = self.peer_connections[fd]
+                self.handle_poll_event_for_peer(peer_connection, event)
 
-        for i, t in enumerate(threads):
-            print('starting thread {}'.format(i))
-            t.start()
+                if peer_connection.is_download_completed():
+                    completed_piece_index = peer_connection.get_current_piece_index()
+                    piece_bytes = peer_connection.get_piece_bytes()
+                    piece_hash = self.hashes[completed_piece_index]
+                    calculated_hash = hashlib.sha1(piece_bytes).digest()
+                    if piece_hash != calculated_hash:
+                        print('Bad hash! c: {} vs r: {}'.format(calculated_hash, piece_hash))
+                        self.pieces_to_download.append(completed_piece_index)
+                    else:
+                        self.completed_pieces.add(completed_piece_index)
+                        write_piece_to_file(self.info_hash, completed_piece_index, piece_bytes,
+                                self.output_directory)
 
-        while len(pieces_to_download) > 0:
-            completed_piece = completed_queue.get()
-            pieces_to_download.remove(completed_piece)
-            num_pieces_downloaded += 1
-            pct = num_pieces_downloaded / total_pieces * 100
-            print('Got piece {}. {}% complete'.format(completed_piece, pct))
+                        pct_complete = len(self.completed_pieces) / len(self.hashes) * 100
+                        print('Got {} / {} pieces. {}% complete'
+                               .format(len(self.completed_pieces), len(self.hashes), pct_complete))
 
-        download_finished_event.set()
-
-        for t in threads:
-            t.join()
-
-        # TODO put all pieces into single file.
-        print('Download finished')
-
+                if peer_connection.is_idle():
+                    next_piece = self.pieces_to_download.popleft()
+                    peer_connection.start_piece_download(next_piece)
+           
 
 if __name__ == '__main__':
     download = TorrentDownload('torrent-files/ubuntu.iso.torrent')
+    download.setup_output_directory()
+    download.initialize()
     download.run_download()
