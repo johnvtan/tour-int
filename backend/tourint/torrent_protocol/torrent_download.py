@@ -19,9 +19,10 @@ else:
     from . import peer
 
 TORRENT_OUTPUT_DIRECTORY: str = pathlib.Path(__file__).absolute().parent
+TORRENT_PIECE_ENDING: str = 'torrent_piece'
 
 def write_piece_to_file(info_hash, piece_idx, piece_bytes, output_directory):
-    piece_file_name = '{}_piece_{}.torrent_piece'.format(info_hash.hex(), piece_idx)
+    piece_file_name = '{}_piece_{}.{}'.format(info_hash.hex(), piece_idx, TORRENT_PIECE_ENDING)
     piece_file_path = os.path.join(output_directory, piece_file_name)
 
     if os.path.exists(piece_file_path):
@@ -73,7 +74,7 @@ class TorrentDownload:
         # maps from socket fd to peer connection object
         self.peer_connections = {}
 
-        self.pieces_to_download = deque([i for i in range(len(self.hashes))])
+        self.pieces_to_download = set([i for i in range(len(self.hashes))])
         self.completed_pieces = set()
         self.num_dc = 0
 
@@ -84,10 +85,19 @@ class TorrentDownload:
         print('Starting download in directory {}'.format(self.output_directory.as_posix()))
 
         if os.path.exists(self.output_directory):
-            print('Error: directory already exists, not downloading')
-            return
-        
-        os.makedirs(self.output_directory.as_posix())
+            print('Directory already exists, collecting all downloaded pieces...')
+            existing_piece_files = [f for f in os.listdir(self.output_directory) if
+                    f.endswith(TORRENT_PIECE_ENDING)]
+            for piece_file in existing_piece_files:
+                name = piece_file.split('.')[0]
+                split_name = name.split('_')
+                piece_index = int(split_name[2])
+                self.pieces_to_download.remove(piece_index)
+                self.completed_pieces.add(piece_index)
+            print(self.pieces_to_download)
+        else:
+            print('Starting new download')
+            os.makedirs(self.output_directory.as_posix())
     
     def combine_piece_files(self):
         pass
@@ -117,7 +127,7 @@ class TorrentDownload:
             peer_connection.set_disconnected()
             unfinished_piece = peer_connection.get_current_piece_index()
             if unfinished_piece >= 0:
-                self.pieces_to_download.append(unfinished_piece)
+                self.pieces_to_download.add(unfinished_piece)
         elif event == select.POLLIN:
             peer_connection.read_from_socket()
             peer_connection.run_state_machine()
@@ -143,7 +153,7 @@ class TorrentDownload:
                     calculated_hash = hashlib.sha1(piece_bytes).digest()
                     if piece_hash != calculated_hash:
                         print('Bad hash! c: {} vs r: {}'.format(calculated_hash, piece_hash))
-                        self.pieces_to_download.append(completed_piece_index)
+                        self.pieces_to_download.add(completed_piece_index)
                     else:
                         self.completed_pieces.add(completed_piece_index)
                         write_piece_to_file(self.info_hash, completed_piece_index, piece_bytes,
@@ -155,7 +165,8 @@ class TorrentDownload:
                                .format(len(self.completed_pieces), len(self.hashes), pct_complete))
 
                 if peer_connection.is_idle() and len(self.pieces_to_download) > 0:
-                    next_piece = self.pieces_to_download.popleft()
+                    next_piece = next(iter(self.pieces_to_download))
+                    self.pieces_to_download.remove(next_piece)
                     peer_connection.start_piece_download(next_piece)
            
 
