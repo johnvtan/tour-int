@@ -165,7 +165,6 @@ class PeerMessage:
 
         Returns None if there isn't enough data in the buffer
         """
-        #print('from_ring_buffer with {} bytes'.format(len(buf)))
         if len(buf) < cls.MESSAGE_LENGTH_SIZE:
             return None
         
@@ -176,13 +175,17 @@ class PeerMessage:
             buf.remove(cls.MESSAGE_LENGTH_SIZE)
             return cls(cls.Id.KEEP_ALIVE, 0)
         
+        if message_length > 20000:
+            raise Exception('shouldnt happen')
+
         #print('message length {}'.format(message_length))
         if len(buf) < message_length + cls.MESSAGE_LENGTH_SIZE:
             # Incomplete header
             # Don't remove anything from the buffer, wait for next byte to get a full header
-            print('incomplete header: buffer needs {} bytes but only has {}'.format(message_length + 4,
-                len(buf)))
+            #print('incomplete header: buffer needs {} bytes but only has {}'.format(message_length + 4,
+            #    len(buf)))
             return None
+
 
         # Have a full header (length + message id)
         buf.remove(cls.MESSAGE_LENGTH_SIZE)
@@ -275,7 +278,7 @@ class PeerConnection:
     # Timeout time in seconds in case a peer fails to connect
     CONNECTION_TIMEOUT_S: int = 5
     MAX_QUEUED_REQUESTS: int = 10
-    BUFFER_PADDING: int = 4096 
+    BUFFER_PADDING: int = 1024 
 
     class State(enum.Enum):
         INIT_HANDSHAKE = 0
@@ -297,12 +300,11 @@ class PeerConnection:
         self.peer_id = None
 
         self.num_queued_requests = 0
-        self.buffer = ring_buffer.RingBuffer(2*PieceDownload.BLOCK_SIZE_BYTES + self.BUFFER_PADDING)
+        self.buffer = ring_buffer.RingBuffer(PieceDownload.BLOCK_SIZE_BYTES + self.BUFFER_PADDING)
 
         self.available_pieces = None
         self.state: self.State = self.State.DISCONNECTED 
         self.download_state = None
-
 
     def __str__(self):
         return "PeerConnection on IP = {}:{} for hash {}".format(self.peer_info['ip'],
@@ -314,7 +316,6 @@ class PeerConnection:
         """
         # TODO how to track state of connection if this fails?
         assert(self.state == self.State.DISCONNECTED)
-        print('{} initializing connection'.format(str(self)))
 
         self.socket.settimeout(self.CONNECTION_TIMEOUT_S)
         self.socket.connect((self.peer_info['ip'], self.peer_info['port']))
@@ -333,7 +334,6 @@ class PeerConnection:
         received = self.buffer.read(PeerHandshake.HANDSHAKE_SIZE)
         handshake = PeerHandshake.deserialize(received)
         if handshake.info_hash != self.info_hash:
-            print("{} recevied bad handshake".format(str(self)))
             self.state = self.State.DISCONNECTED
             return
         
@@ -422,6 +422,9 @@ class PeerConnection:
             return False
 
         return self.download_state.all_blocks_received() and self.state == self.State.IDLE
+    
+    def is_disconnected(self):
+        return self.state == self.State.DISCONNECTED
 
     def run_init_states(self):
         if self.state == self.State.INIT_HANDSHAKE:
@@ -433,6 +436,7 @@ class PeerConnection:
 
             if message.id != PeerMessage.Id.BITFIELD:
                 print('Error! {} expected bitfield msg but got {}'.format(str(self), message.id))
+                self.set_disconnected()
                 return
             
             self.handle_bitfield(message.payload)
@@ -486,10 +490,13 @@ class PeerConnection:
         if recv_length == 0:
             print('buffer full pray 2 jesus there\'s a full message in there')
             return
+
         recv = self.socket.recv(recv_length)
 
         if len(recv) == 0:
+            self.set_disconnected()
             return
+
         self.append_to_buffer(recv)
 
     def run_state_machine(self):

@@ -98,7 +98,7 @@ class TorrentDownload:
 
         read_only_flags = select.POLLIN | select.POLLPRI | select.POLLHUP | select.POLLERR
         self.poll_object = select.poll()
-        for peer_info in peer_info_list[:10]:
+        for peer_info in peer_info_list:
             peer_connection = peer.PeerConnection(peer_info, self.info_hash, self.info['piece length'])
             try:
                 peer_connection.initialize_connection()
@@ -118,14 +118,14 @@ class TorrentDownload:
             unfinished_piece = peer_connection.get_current_piece_index()
             if unfinished_piece >= 0:
                 self.pieces_to_download.append(unfinished_piece)
-        elif event == select.POLLIN or event == select.POLLPRI:
-            #print('peer got data')
+        elif event == select.POLLIN:
             peer_connection.read_from_socket()
             peer_connection.run_state_machine()
         elif event == select.POLLERR:
             print('peer had error??')
         elif event == select.POLLNVAL:
-            print('peer {} invalid??'.format(peer_connection))
+            #print('peer {} invalid??'.format(peer_connection))
+            pass
  
     def run_download(self):
         print('Download starting...')
@@ -134,7 +134,9 @@ class TorrentDownload:
                 peer_connection = self.peer_connections[fd]
                 self.handle_poll_event_for_peer(peer_connection, event)
 
-                if peer_connection.is_download_completed():
+                if peer_connection.is_disconnected():
+                    pass
+                elif peer_connection.is_download_completed():
                     completed_piece_index = peer_connection.get_current_piece_index()
                     piece_bytes = peer_connection.get_piece_bytes()
                     piece_hash = self.hashes[completed_piece_index]
@@ -148,10 +150,11 @@ class TorrentDownload:
                                 self.output_directory)
 
                         pct_complete = len(self.completed_pieces) / len(self.hashes) * 100
+                        print('Got piece index {}'.format(completed_piece_index))
                         print('Got {} / {} pieces. {}% complete'
                                .format(len(self.completed_pieces), len(self.hashes), pct_complete))
 
-                if peer_connection.is_idle():
+                if peer_connection.is_idle() and len(self.pieces_to_download) > 0:
                     next_piece = self.pieces_to_download.popleft()
                     peer_connection.start_piece_download(next_piece)
            

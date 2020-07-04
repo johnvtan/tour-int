@@ -19,7 +19,7 @@ class RingBuffer:
 
         read_start = self.read_index 
         read_end = (self.read_index + num_bytes) % self.capacity
-        if read_end < read_start:
+        if read_end <= read_start:
             ret.extend(self.buffer[read_start:self.capacity])
             ret.extend(self.buffer[:read_end])
         else:
@@ -47,7 +47,7 @@ class RingBuffer:
         write_start = (self.read_index + self.count) % self.capacity
         write_end = (write_start + len(data)) % self.capacity
 
-        if write_end < write_start:
+        if write_end <= write_start:
             num_before_end = self.capacity - write_start
             self.buffer[write_start:self.capacity] = data[:num_before_end]
             self.buffer[:write_end] = data[num_before_end:]
