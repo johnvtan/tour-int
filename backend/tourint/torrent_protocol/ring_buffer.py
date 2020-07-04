@@ -56,6 +56,9 @@ class RingBuffer:
 
         self.count += len(data)
 
+    def empty_space(self):
+        return self.capacity - self.count
+
     def clear(self):
         self.count = 0
         self.read_index = 0
