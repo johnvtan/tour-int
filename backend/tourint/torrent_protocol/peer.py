@@ -175,9 +175,6 @@ class PeerMessage:
             buf.remove(cls.MESSAGE_LENGTH_SIZE)
             return cls(cls.Id.KEEP_ALIVE, 0)
         
-        if message_length > 20000:
-            raise Exception('shouldnt happen')
-
         #print('message length {}'.format(message_length))
         if len(buf) < message_length + cls.MESSAGE_LENGTH_SIZE:
             # Incomplete header
@@ -251,7 +248,8 @@ class PieceDownload:
 
     def handle_block_response(self, payload):
         piece_index = int.from_bytes(payload[0:4], byteorder='big')
-        assert(piece_index == self.piece_index)
+        if piece_index != self.piece_index:
+            return
 
         start_byte = int.from_bytes(payload[4:8], byteorder='big')
 
@@ -285,9 +283,8 @@ class PeerConnection:
         INIT_BITFIELD = 1
         DOWNLOADING = 2
         IDLE = 3
-        PAUSED = 4
-        CANCEL = 5
-        DISCONNECTED = 6
+        CANCEL = 4
+        DISCONNECTED = 5
 
     def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
         self.peer_info = peer_info
@@ -380,7 +377,9 @@ class PeerConnection:
 
     def start_piece_download(self, piece_index):
         assert(self.state == self.State.IDLE)
-        assert(self.peer_has_piece(piece_index))
+
+        if not self.peer_has_piece(piece_index):
+            return
         
         print('Starting download on piece {}'.format(piece_index))
         self.state = self.State.DOWNLOADING
@@ -405,9 +404,6 @@ class PeerConnection:
             return -1
         return self.download_state.piece_index
 
-    def set_paused(self):
-        self.state = self.State.PAUSED
-
     def set_disconnected(self):
         # TODO send cancel command, or maybe just disconnect?
         # not sure how to disconnect from socket gracefully
@@ -426,6 +422,14 @@ class PeerConnection:
     def is_disconnected(self):
         return self.state == self.State.DISCONNECTED
 
+    def is_downloading(self):
+        return self.state == self.State.DOWNLOADING
+
+    def cancel_piece_download(self):
+        self.state = self.State.IDLE
+        self.num_queued_requests = 0
+        self.download_state = None
+
     def run_init_states(self):
         if self.state == self.State.INIT_HANDSHAKE:
             self.validate_handshake()
@@ -443,7 +447,6 @@ class PeerConnection:
             self.state = self.State.IDLE
             self.socket.settimeout(None)
             self.socket.send(PeerMessage(PeerMessage.Id.INTERESTED, None).serialize())
-
 
     def handle_messages_from_buffer(self, handle_piece_message):
         if self.state == self.State.DISCONNECTED:
@@ -473,13 +476,8 @@ class PeerConnection:
             self.send_block_requests(self.download_state)
 
         if self.download_state.all_blocks_received():
+            # This makes the download be "completed"
             self.state = self.State.IDLE
-
-    def run_pause_state(self, send_keep_alive=False):
-        assert(self.state == self.State.PAUSED)
-        self.handle_messages_from_buffer(False)
-        if send_keep_alive:
-            self.socket.send(PeerMessage(PeerMessage.Id.KEEP_ALIVE).serialize())
 
     def run_idle_state(self):
         assert(self.state == self.State.IDLE)
@@ -504,8 +502,6 @@ class PeerConnection:
             self.run_init_states()
         elif self.state == self.State.IDLE:
             self.run_idle_state()
-        elif self.state == self.State.PAUSED:
-            self.run_pause_state()
         elif self.state == self.State.DOWNLOADING:
             self.run_download_state()
 

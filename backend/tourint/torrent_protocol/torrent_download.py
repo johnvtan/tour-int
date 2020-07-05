@@ -4,6 +4,7 @@ import os
 import pathlib
 import queue
 import select
+import random
 from collections import deque
 from typing import Dict, List
 
@@ -31,7 +32,6 @@ def write_piece_to_file(info_hash, piece_idx, piece_bytes, output_directory):
 
     with open(piece_file_path, 'wb+') as f:
         f.write(piece_bytes)
-
 
 class PieceHashes:
     HASH_LENGTH: int = 20
@@ -125,9 +125,8 @@ class TorrentDownload:
             self.num_dc += 1
             print('{} disconnected: {}'.format(str(peer_connection), self.num_dc))
             peer_connection.set_disconnected()
-            unfinished_piece = peer_connection.get_current_piece_index()
-            if unfinished_piece >= 0:
-                self.pieces_to_download.add(unfinished_piece)
+            self.replace_disconnected_piece_index(peer_connection)
+            self.poll_object.unregister(peer_connection.socket.fileno())
         elif event == select.POLLIN:
             peer_connection.read_from_socket()
             peer_connection.run_state_machine()
@@ -136,7 +135,25 @@ class TorrentDownload:
         elif event == select.POLLNVAL:
             #print('peer {} invalid??'.format(peer_connection))
             pass
- 
+
+    def in_end_game(self):
+        connected_peers = [p for p in self.peer_connections.values() if p.is_idle() or\
+                p.state == peer.PeerConnection.State.DOWNLOADING]
+
+        return len(connected_peers) >= len(self.pieces_to_download)
+    
+    def stop_download(self, cancelled_piece_index=None):
+        for p in self.peer_connections.values():
+            if not cancelled_piece_index or cancelled_piece_index == p.get_current_piece_index():
+                print('cancelling peer bc index was received')
+                p.cancel_piece_download()
+
+    def replace_disconnected_piece_index(self, peer):
+        assert(peer.is_disconnected())
+        unfinished_piece = peer.get_current_piece_index()
+        if unfinished_piece >= 0:
+            self.pieces_to_download.add(unfinished_piece)
+    
     def run_download(self):
         print('Download starting...')
         while len(self.completed_pieces) < len(self.hashes):
@@ -145,7 +162,10 @@ class TorrentDownload:
                 self.handle_poll_event_for_peer(peer_connection, event)
 
                 if peer_connection.is_disconnected():
-                    pass
+                    print('{} disconnected'.format(str(peer_connection)))
+                    peer_connection.set_disconnected()
+                    self.replace_disconnected_piece_index(peer_connection)
+                    self.poll_object.unregister(fd)
                 elif peer_connection.is_download_completed():
                     completed_piece_index = peer_connection.get_current_piece_index()
                     piece_bytes = peer_connection.get_piece_bytes()
@@ -159,15 +179,33 @@ class TorrentDownload:
                         write_piece_to_file(self.info_hash, completed_piece_index, piece_bytes,
                                 self.output_directory)
 
+                        if completed_piece_index in self.pieces_to_download:
+                            # TODO cancel piece download on all peers that have this piece
+                            print('cancelling')
+                            self.stop_download(completed_piece_index)
+                            self.pieces_to_download.remove(completed_piece_index)
+
                         pct_complete = len(self.completed_pieces) / len(self.hashes) * 100
-                        print('Got piece index {}'.format(completed_piece_index))
+                        print('Got index {}'.format(completed_piece_index))
                         print('Got {} / {} pieces. {}% complete'
                                .format(len(self.completed_pieces), len(self.hashes), pct_complete))
 
-                if peer_connection.is_idle() and len(self.pieces_to_download) > 0:
+                if self.in_end_game() and len(self.pieces_to_download) > 0:
+                    # blast all idle peers with the next not downloaded block
+                    idle_peers = [p for p in self.peer_connections.values() if p.is_idle() and\
+                            not p.choked]
                     next_piece = next(iter(self.pieces_to_download))
+                    for p in idle_peers:
+                        p.start_piece_download(next_piece)
+                elif peer_connection.is_idle() and len(self.pieces_to_download) > 0:
+                    next_piece = random.sample(self.pieces_to_download, 1)[0]
                     self.pieces_to_download.remove(next_piece)
                     peer_connection.start_piece_download(next_piece)
+
+
+        print('Done!')
+        for p in self.peer_connection:
+            p.set_disconneted()
            
 
 if __name__ == '__main__':
