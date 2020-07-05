@@ -286,10 +286,9 @@ class PeerConnection:
         CANCEL = 4
         DISCONNECTED = 5
 
-    def __init__(self, peer_info: Dict, info_hash: bytearray, piece_length):
+    def __init__(self, peer_info: Dict, info_hash: bytearray):
         self.peer_info = peer_info
         self.info_hash = info_hash
-        self.piece_length = piece_length
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.choked = True
@@ -375,15 +374,14 @@ class PeerConnection:
             self.socket.send(next_request.serialize())
             self.num_queued_requests += 1
 
-    def start_piece_download(self, piece_index):
+    def start_piece_download(self, piece_index, piece_length):
         assert(self.state == self.State.IDLE)
 
         if not self.peer_has_piece(piece_index):
             return
         
-        print('Starting download on piece {}'.format(piece_index))
         self.state = self.State.DOWNLOADING
-        self.download_state = PieceDownload(piece_index, self.piece_length)
+        self.download_state = PieceDownload(piece_index, piece_length)
         if not self.choked:
             self.send_block_requests(self.download_state)
     
