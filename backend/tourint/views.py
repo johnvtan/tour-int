@@ -6,6 +6,7 @@ from .serializers import TorrentsSerializer
 
 from .torrent_protocol import tracker
 from .torrent_protocol import bencode
+from .torrent_protocol.torrent_download import TorrentDownload
 
 import os
 import urllib
@@ -13,6 +14,8 @@ import json
 
 DOWNLOAD_FOLDER: str = './downloads/'
 TORRENT_FILE_ENDING: str = '.torrent'
+
+GLOBAL_DOWNLOAD_PROCESS: TorrentDownload = None
 
 # Create your views here.
 class ListTorrentsView(generics.ListAPIView):
@@ -50,7 +53,11 @@ def handle_request_to_base_directory(request):
                      number_of_seeders = 0,
                      number_of_peers_connected = 0,
                      download_directory = DOWNLOAD_FOLDER)
-        t.save()
+
+        print('STARTING DOWNLOAD')
+        GLOBAL_DOWNLOAD_PROCESS = TorrentDownload(torrent_file_path, t)
+        GLOBAL_DOWNLOAD_PROCESS.start()
+        print('DOWNLOAD STARTED')
         return HttpResponse(status=200)
 
 def handle_request_to_hash(request, file_hash):

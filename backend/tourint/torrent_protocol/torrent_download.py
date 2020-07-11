@@ -5,6 +5,7 @@ import pathlib
 import queue
 import select
 import random
+from multiprocessing import Process
 from collections import deque
 from typing import Dict, List
 
@@ -49,7 +50,7 @@ class PieceHashes:
                 len(self.piece_hashes)))
         return self.piece_hashes[start_byte:end_byte]
 
-class TorrentDownload:
+class TorrentDownload(Process):
     """Class that handles downloading a single torrent file.
 
     Should handle:
@@ -58,7 +59,8 @@ class TorrentDownload:
     """
 
     MAX_NUM_CONNECTED_PEERS: int = 5 
-    def __init__(self, torrent_file: str):
+    def __init__(self, torrent_file: str, db_entry):
+        Process.__init__(self)
         self.metainfo: Dict = tracker.decode_torrent_file(torrent_file)
         self.announce_url = self.metainfo['announce']
         self.info = self.metainfo['info']
@@ -77,6 +79,9 @@ class TorrentDownload:
         self.pieces_to_download = set([i for i in range(len(self.hashes))])
         self.completed_pieces = set()
         self.num_dc = 0
+
+        self.db_entry = db_entry
+        self.db_entry.save()
 
     def contact_tracker(self):
         return tracker.send_ths_request(self.announce_url, self.info_hash, self.info['length'])
@@ -101,9 +106,15 @@ class TorrentDownload:
     def combine_piece_files(self):
         pass
 
+    def run(self):
+        self.setup_output_directory()
+        self.initialize()
+        self.run_download()
+
     def initialize(self):
         tracker_response = self.contact_tracker()
         peer_info_list = tracker_response['peers']
+        self.db_entry.number_of_seeders = len(peer_info_list)
 
         read_only_flags = select.POLLIN | select.POLLPRI | select.POLLHUP | select.POLLERR
         self.poll_object = select.poll()
@@ -118,6 +129,8 @@ class TorrentDownload:
             self.poll_object.register(peer_connection.socket, read_only_flags)
 
         print('initialized {} connections'.format(len(self.peer_connections)))
+        self.db_entry.number_of_peers_connected = len(self.peer_connections)
+        self.db_entry.save()
 
     def handle_poll_event_for_peer(self, peer_connection, event):
         if event == select.POLLHUP or event == select.POLLRDHUP:
@@ -190,6 +203,8 @@ class TorrentDownload:
                         print('Got {} / {} pieces. {}% complete'
                                .format(len(self.completed_pieces), len(self.hashes), pct_complete),
                                end='\r')
+                        self.db_entry.downloaded_bytes = len(self.completed_pieces) * self.info['piece length']
+                        self.db_entry.save()
 
                 if self.in_end_game():
                     # This might not be exactly the situation that the spec says is the 'end game'
