@@ -2,6 +2,13 @@ import axios from "axios";
 
 const apiUrl = "http://localhost:8000/torrents/";
 
+export const getTorrents = () => {
+  return axios({
+    url: `${apiUrl}`,
+    method: "GET",
+  });
+};
+
 export const createTorrent = (formData) => {
   return axios({
     url: apiUrl,

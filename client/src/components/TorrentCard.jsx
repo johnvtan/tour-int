@@ -16,8 +16,8 @@ const TorrentCard = (props) => {
     total_size_bytes,
     speed,
     download_status,
-    seeds,
-    peers,
+    number_of_seeders,
+    number_of_peers_connected,
     eta,
     file_hash,
   } = props.data;
@@ -85,8 +85,14 @@ const TorrentCard = (props) => {
       </TableRow>
       <TableRowAlternate>
         <TableCell cellWidth="148px"></TableCell>
-        <TableCell cellWidth="96px">{seeds ? `seeds: ${seeds}` : ""}</TableCell>
-        <TableCell cellWidth="96px">{peers ? `peers: ${peers}` : ""}</TableCell>
+        <TableCell cellWidth="96px">
+          {number_of_seeders ? `seeds: ${number_of_seeders}` : ""}
+        </TableCell>
+        <TableCell cellWidth="96px">
+          {number_of_peers_connected
+            ? `peers: ${number_of_peers_connected}`
+            : ""}
+        </TableCell>
         <TableCell cellWidth="120px">{eta ? `${eta} left` : ""}</TableCell>
       </TableRowAlternate>
     </>
