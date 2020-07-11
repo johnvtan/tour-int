@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const apiUrl = "BACKEND URL HERE";
+const apiUrl = "http://localhost:8000/torrents/";
 
 export const createTorrent = (formData) => {
   return axios({
