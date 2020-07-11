@@ -8,7 +8,6 @@ server:
 	$(PYTHON) backend/manage.py runserver
 
 client:
-	$(NPM) i --prefix ./client
 	$(NPM) start --prefix ./client
 
 run:
