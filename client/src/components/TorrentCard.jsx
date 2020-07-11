@@ -65,8 +65,12 @@ const TorrentCard = (props) => {
     <>
       <TableRow>
         <TableCell cellWidth="148px">{name}</TableCell>
-        <TableCell cellWidth="32px">{downloaded_bytes}</TableCell>
-        <TableCell cellWidth="40px">{total_size_bytes}</TableCell>
+        <TableCell cellWidth="32px">
+          {downloaded_bytes.toString().substring(0, 4)}
+        </TableCell>
+        <TableCell cellWidth="40px">
+          {total_size_bytes.toString().substring(0, 4)}
+        </TableCell>
         <TableCell cellWidth="80px">{speed}</TableCell>
         <TableCell cellWidth="128px">{download_status}</TableCell>
         <TableCell cellWidth="255px">

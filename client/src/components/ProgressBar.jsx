@@ -8,7 +8,7 @@ import {
 
 function ProgressBar(props) {
   const { downloaded_bytes, total_size_bytes } = props;
-  const progress = (downloaded_bytes / total_size_bytes) * 100;
+  const progress = ((downloaded_bytes / total_size_bytes) * 100).toFixed(2);
 
   // hardcoding 1 bar every 5%, up to 20 max.
   // changing this requires making styling dynamic for the entire component
