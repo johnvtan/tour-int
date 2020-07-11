@@ -15,6 +15,8 @@ class Torrents(models.Model):
     # Hash of the torrent as a hex string
     file_hash = models.CharField(max_length=255, default="default")
 
+    torrent_file_path = models.TextField(default="torrentfilepath")
+
     total_size_bytes = models.BigIntegerField(default=0)
     downloaded_bytes = models.BigIntegerField(default=0)
 

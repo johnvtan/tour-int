@@ -7,6 +7,7 @@ class TorrentsSerializer(serializers.ModelSerializer):
         fields = (
             'name',
             'file_hash',
+            'torrent_file_path',
             'total_size_bytes',
             'downloaded_bytes',
             'download_status',
